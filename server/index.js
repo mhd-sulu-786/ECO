@@ -1,35 +1,58 @@
-const express = require('express');
+require("dotenv").config();
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
+const cors = require("cors");
+const connectDB = require("./config/DB");
+
+// Import Routes
+const authRoutes = require("./Routes/authRoutes");
+const chatRoutes = require("./Routes/chatRoutes");
+const sellerRoutes = require("./Routes/Seller");
+const adminRoutes = require("./Routes/Admin");
+
 const app = express();
-const soket = require('socket.io');
-const mongoose =require('mongoose')
-const port = process.env.PORT || 3000;
-
-const server = app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: "*" }
 });
 
-const io = require("socket.io")(5001, {
-    cors: { origin: "*" },
+// Connect to MongoDB
+connectDB();
+
+// Middleware
+app.use(express.json());
+app.use(cors());
+app.use(express.urlencoded({ extended: true }));
+
+// Routes
+app.use("/api/auth", authRoutes);
+app.use("/api/chat", chatRoutes);
+app.use("/api/seller", sellerRoutes);
+app.use("/api/admin", adminRoutes);
+
+// 📌 SOCKET.IO CHAT FUNCTIONALITY
+io.on("connection", (socket) => {
+  console.log(`✅ User connected: ${socket.id}`);
+
+  // Listen for messages
+  socket.on("sendMessage", async ({ sender, senderType, receiver, receiverType, message }) => {
+    try {
+      const Chat = require("./modules/Chat");
+      const chatMessage = new Chat({ sender, senderType, receiver, receiverType, message });
+      await chatMessage.save();
+
+      io.emit("receiveMessage", chatMessage); // Send to all clients
+    } catch (error) {
+      console.error("❌ Chat Error:", error);
+    }
   });
-  
-  io.on("connection", (socket) => {
-    console.log("A user connected");
-  
-    socket.on("sendMessage", (data) => {
-      io.emit("receiveMessage", data);
-    });
+
+  socket.on("disconnect", () => {
+    console.log("❌ User disconnected:", socket.id);
   });
-  
-
-mongoose.connect('mongodb://localhost:27017/ChatApp', {useNewUrlParser: true, useUnifiedTopology: true})
-.then(() => {
-    console.log('Connected to MongoDB');
-})
-.catch((error) => {
-    console.error('Error connecting to MongoDB:', error);   
-})
-
-app.get('/', (req, res) => {
-    res.send('Hello World!');
-
 });
+
+// Server Listening
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
